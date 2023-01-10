@@ -215,4 +215,4 @@ if __name__ == "__main__":
     start_time = time.time()
     cr2 = np.cross(rot_z.T, np.cross(v_rotors.T, np.repeat(rot_z,4, axis=1).T)).T
     print("cr2 time:", time.time() - start_time)
-    print("cr1 == cr2:", np.sum(cr1 - cr2) < 1e-10)
+    print("cr1 == cr2:", np.sum(cr1_ - cr2) < 1e-10)

@@ -17,7 +17,6 @@ class AnnealSchedule:
 
 def make_quadrotor_env_single(cfg, render_mode=None, **kwargs):
     from gym_art.quadrotor_single.quadrotor import QuadrotorEnv
-
     quad = 'Crazyflie'
     dyn_randomize_every = dyn_randomization_ratio = None
 
@@ -62,7 +61,7 @@ def make_quadrotor_env_multi(cfg, render_mode=None, **kwargs):
     quad = 'Crazyflie'
     dyn_randomize_every = dyn_randomization_ratio = None
 
-    episode_duration = cfg.quads_episode_duration  # seconds
+    episode_duration = cfg.quads_episode_duration  # seconds.
 
     raw_control = raw_control_zero_middle = True
 
@@ -79,7 +78,6 @@ def make_quadrotor_env_multi(cfg, render_mode=None, **kwargs):
     extended_obs = cfg.neighbor_obs_type
 
     use_replay_buffer = cfg.replay_buffer_sample_prob > 0.0
-
     env = QuadrotorEnvMulti(
         num_agents=cfg.quads_num_agents,
         dynamics_params=quad, raw_control=raw_control, raw_control_zero_middle=raw_control_zero_middle,
@@ -121,7 +119,9 @@ def make_quadrotor_env_multi(cfg, render_mode=None, **kwargs):
         ]
     else:
         annealing = None
-
+    # the final reward_shaping is: 'pos': 1.0, 'effort': 0.05, 'spin': 0.1, 'vel': 0.0, 'crash': 1.0, 'orient': 1.0,
+    # 'yaw': 0.0, 'quadcol_bin': 5.0, 'quadcol_bin_obst': 0.0, 'quadsettle': 0.0, 'quadcol_bin_obst_smooth_max': 10.0,
+    # 'quadcol_bin_smooth_max': 10.0
     env = QuadsRewardShapingWrapper(env, reward_shaping_scheme=reward_shaping, annealing=annealing)
     env = QuadEnvCompatibility(env, render_mode=render_mode)
     return env

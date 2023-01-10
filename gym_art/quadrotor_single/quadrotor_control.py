@@ -7,7 +7,8 @@ from gym_art.quadrotor_single.quad_utils import *
 GRAV = 9.81
 #import line_profiler
 # like raw motor control, but shifted such that a zero action
-# corresponds to the amount of thrust needed to hover.
+# corresponds to the amount of thrust needed to hover
+# this control is running in a zero-middle like mode.
 class ShiftedMotorControl(object):
     def __init__(self, dynamics):
         pass
@@ -21,7 +22,7 @@ class ShiftedMotorControl(object):
     # modifies the dynamics in place.
     #@profile
     def step(self, dynamics, action, dt):
-        action = (action + 1.0) / dynamics.thrust_to_weight
+        action = (action + 1.0) / dynamics.thrust_to_weight  # default is 1.9
         action[action < 0] = 0
         action[action > 1] = 1
         dynamics.step(action, dt)
@@ -209,20 +210,30 @@ class OmegaThrustControl(object):
     def __init__(self, dynamics):
         jacobian = quadrotor_jacobian(dynamics)
         self.Jinv = np.linalg.inv(jacobian)
+        self.step_func = self.step
+        self.action = None
 
     def action_space(self, dynamics):
         circle_per_sec = 2 * np.pi
         max_rp = 5 * circle_per_sec
         max_yaw = 1 * circle_per_sec
         min_g = -1.0
-        max_g = dynamics.thrust_to_weight - 1.0
+        max_g = dynamics.thrust_to_weight - 1.0  # default thrust to weight of craziflie is 1.9
         low  = np.array([min_g, -max_rp, -max_rp, -max_yaw])
         high = np.array([max_g,  max_rp,  max_rp,  max_yaw])
         return spaces.Box(low, high, dtype=np.float32)
 
     # modifies the dynamics in place.
     #@profile
-    def step(self, dynamics, action, dt):
+    def step(self, dynamics, action, goal, dt, observation=None):
+        # rescale the action from (-1, 1)
+        action_space = self.action_space(dynamics)
+        action_low = action_space.low
+        action_high = action_space.high
+        omega_scale = action_high[1:]
+        action[1:] *= omega_scale
+        action = np.clip(action, action_low, action_high)
+
         kp = 5.0 # could be more aggressive
         omega_err = dynamics.omega - action[1:]
         dw_des = -kp * omega_err
@@ -232,6 +243,7 @@ class OmegaThrustControl(object):
         thrusts[thrusts < 0] = 0
         thrusts[thrusts > 1] = 1
         dynamics.step(thrusts, dt)
+        self.action = thrusts.copy()
 
 
 # TODO: this has not been tested well yet.
@@ -239,6 +251,7 @@ class VelocityYawControl(object):
     def __init__(self, dynamics):
         jacobian = quadrotor_jacobian(dynamics)
         self.Jinv = np.linalg.inv(jacobian)
+        self.step_func = self.step
 
     def action_space(self, dynamics):
         vmax = 20.0 # meters / sec
@@ -286,7 +299,7 @@ class VelocityYawControl(object):
 class NonlinearPositionController(object):
     #@profile
     def __init__(self, dynamics, tf_control=True):
-        import tensorflow as tf
+        # import tensorflow as tf
         jacobian = quadrotor_jacobian(dynamics)
         self.Jinv = np.linalg.inv(jacobian)
         ## Jacobian inverse for our quadrotor

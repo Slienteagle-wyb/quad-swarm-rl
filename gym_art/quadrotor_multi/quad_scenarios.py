@@ -41,8 +41,8 @@ class QuadrotorScenario:
         else:
             ep_time = QUADS_PARAMS_DICT['swap_goals'][2]
 
-        for env in self.envs:
-            env.reset_ep_len(ep_time=ep_time)
+        # for env in self.envs:
+        #     env.reset_ep_len(ep_time=ep_time)
 
         # Aux variables for scenario: circular configuration
         self.settle_count = np.zeros(self.num_agents)
@@ -214,7 +214,7 @@ class Scenario_dynamic_same_goal(QuadrotorScenario):
 
     def reset(self):
         # Update duration time
-        duration_time = np.random.uniform(low=4.0, high=6.0)
+        duration_time = np.random.uniform(low=8.0, high=8.0)
         self.control_step_for_sec = int(duration_time * self.envs[0].control_freq)
 
         # Reset formation, and parameters related to the formation; formation center; goals
@@ -309,7 +309,7 @@ class Scenario_ep_rand_bezier(QuadrotorScenario):
         room_dims = np.array(self.room_dims) - self.formation_size
         # min and max distance the goal can spawn away from its current location. 30 = empirical upper bound on
         # velocity that the drones can handle.
-        max_dist = min(30, max(room_dims))
+        max_dist = min(4.0, max(room_dims))
         min_dist = max_dist / 2
         if tick % control_steps == 0 or tick == 1:
             # sample a new goal pos that's within the room boundaries and satisfies the distance constraint

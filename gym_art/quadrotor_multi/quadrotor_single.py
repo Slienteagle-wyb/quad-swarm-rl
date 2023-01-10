@@ -585,13 +585,21 @@ class QuadrotorDynamics:
 
 
 # reasonable reward function for hovering at a goal and not flying too high
-def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, rew_coeff, action_prev,
+def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, rew_coeff, action_prev, dist_prev,
                             quads_settle=False, quads_settle_range_meters=1.0, quads_vel_reward_out_range=0.8):
     ##################################################
     ## log to create a sharp peak at the goal
     dist = np.linalg.norm(goal - dynamics.pos)
-    cost_pos_raw = dist
-    cost_pos = rew_coeff["pos"] * cost_pos_raw
+    if dist_prev is None:
+        dist_prev = copy.deepcopy(dist)
+    # cost_pos_raw = dist
+    # cost_pos = rew_coeff["pos"] * cost_pos_raw
+    cost_pos_raw = 2.0 * np.log(1.0 + dist)
+    cost_pos = rew_coeff["pos"] * cost_pos_raw  # default pos coef: 1.0
+
+    ## construct a preceed bonus
+    cost_precede_raw = 10.0 * (dist - dist_prev)
+    cost_precede = rew_coeff['precede'] * cost_precede_raw
 
     # sphere of equal reward if drones are close to the goal position
     vel_coeff = rew_coeff["vel"]
@@ -644,6 +652,7 @@ def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, re
     reward = -dt * np.sum([
         cost_pos,
         cost_effort,
+        cost_precede,
         cost_crash,
         cost_orient,
         cost_yaw,
@@ -653,7 +662,8 @@ def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, re
         cost_act_change,
         cost_vel
     ])
-
+    # print(-cost_precede, -cost_pos)
+    # print(-cost_pos, -cost_orient, -cost_effort, -cost_spin)
     rew_info = {
         "rew_main": -cost_pos,
         'rew_pos': -cost_pos,
@@ -712,7 +722,7 @@ class QuadrotorSingle:
                  rew_coeff=None, sense_noise=None, verbose=False, gravity=GRAV,
                  t2w_std=0.005, t2t_std=0.0005, excite=False, dynamics_simplification=False, use_numba=False, swarm_obs='none', num_agents=1,quads_settle=False,
                  quads_settle_range_meters=1.0, quads_vel_reward_out_range=0.8,
-                 view_mode='local', obstacle_mode='no_obstacles', obstacle_num=0, num_use_neighbor_obs=0):
+                 view_mode='local', obstacle_mode='no_obstacles', obstacle_num=0, num_use_neighbor_obs=0, controller_type=None):
         np.seterr(under='ignore')
         """
         Args:
@@ -736,7 +746,7 @@ class QuadrotorSingle:
             obs_repr: [str] options: xyz_vxyz_rot_omega, xyz_vxyz_quat_omega
             ep_time: [float] episode time in simulated seconds. This parameter is used to compute env max time length in steps.
             obstacles_num: [int] number of obstacle in the env
-            room_size: [int] env room size. Not the same as the initialization box to allow shorter episodes
+            room_size: [int] env room size. Not the same as the initialization box to allow shorterv episodes
             init_random_state: [bool] use random state initialization or horizontal initialization with 0 velocities
             rew_coeff: [dict] weights for different reward components (see compute_weighted_reward() function)
             sens_noise (dict or str): sensor noise parameters. If None - no noise. If "default" then the default params are loaded. Otherwise one can provide specific params.
@@ -757,6 +767,7 @@ class QuadrotorSingle:
         self.verbose = verbose
         self.obstacles_num = obstacles_num
         self.raw_control = raw_control
+        self.controller_type=controller_type
         self.use_numba = use_numba
         self.update_sense_noise(sense_noise=sense_noise)
         self.gravity = gravity
@@ -873,7 +884,6 @@ class QuadrotorSingle:
         self.tick = 0
         self.crashed = False
         self.control_freq = sim_freq / sim_steps
-
         self.rew_coeff = None  # provided by the parent multi_env
 
         #########################################
@@ -939,13 +949,19 @@ class QuadrotorSingle:
 
         ################################################################################
         ## CONTROL
-        if self.raw_control:
+        if self.raw_control and self.controller_type == 'raw_thrust':
             if self.dim_mode == '1D':  # Z axis only
                 self.controller = VerticalControl(self.dynamics, zero_action_middle=self.raw_control_zero_middle)
             elif self.dim_mode == '2D':  # X and Z axes only
                 self.controller = VertPlaneControl(self.dynamics, zero_action_middle=self.raw_control_zero_middle)
             elif self.dim_mode == '3D':
                 self.controller = RawControl(self.dynamics, zero_action_middle=self.raw_control_zero_middle)
+            else:
+                raise ValueError('QuadEnv: Unknown dimensionality mode %s' % self.dim_mode)
+        elif self.controller_type == 'omega_thrust':
+            print('current controller type is: ', self.controller_type)
+            if self.dim_mode == '3D':
+                self.controller = OmegaThrustControl(self.dynamics)
             else:
                 raise ValueError('QuadEnv: Unknown dimensionality mode %s' % self.dim_mode)
         else:
@@ -1048,17 +1064,18 @@ class QuadrotorSingle:
                                                           np.clip(self.dynamics.pos,
                                                                   a_min=self.room_box[0],
                                                                   a_max=self.room_box[1]))
-
         self.time_remain = self.ep_len - self.tick
-        reward, rew_info = compute_reward_weighted(self.dynamics, self.goal, action, self.dt, self.crashed,
+        reward, rew_info = compute_reward_weighted(self.dynamics, self.goal, self.controller.action, self.dt, self.crashed,
                                                    self.time_remain,
-                                                   rew_coeff=self.rew_coeff, action_prev=self.actions[1], quads_settle=self.quads_settle,
+                                                   rew_coeff=self.rew_coeff, action_prev=self.actions[1], dist_prev=self.dist_prev,
+                                                   quads_settle=self.quads_settle,
                                                    quads_settle_range_meters=self.quads_settle_range_meters,
                                                    quads_vel_reward_out_range=self.quads_vel_reward_out_range
         )
         self.tick += 1
-        done = self.tick > self.ep_len  # or self.crashed
+        done = self.tick >= self.ep_len or self.crashed
         sv = self.state_vector(self)
+        self.dist_prev = np.linalg.norm(self.goal - self.dynamics.pos)
 
         self.traj_count += int(done)
 
@@ -1144,6 +1161,7 @@ class QuadrotorSingle:
             self.box = self.box * self.box_scale
         x, y, z = self.np_random.uniform(-self.box, self.box, size=(3,)) + self.goal
 
+
         if self.dim_mode == '1D':
             x, y = self.goal[0], self.goal[1]
         elif self.dim_mode == '2D':
@@ -1193,6 +1211,7 @@ class QuadrotorSingle:
         self.crashed = False
         self.tick = 0
         self.actions = [np.zeros([4, ]), np.zeros([4, ])]
+        self.dist_prev = None
 
         state = self.state_vector(self)
         return state
@@ -1258,7 +1277,7 @@ def test_rollout(quad, dyn_randomize_every=None, dyn_randomization_ratio=None,
     time_limit = 25
     render_each = 2
     rollouts_num = traj_num
-    plot_obs = False
+    plot_obs = True
 
     if policy_type == "mellinger":
         raw_control = False

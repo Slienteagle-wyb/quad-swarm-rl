@@ -37,7 +37,7 @@ import gym.envs.registration as gym_reg
 ## MY LIBS
 import gym_art.quadrotor_single.quadrotor_randomization as quad_rand
 from gym_art.quadrotor_single.quadrotor_control import *
-from gym_art.quadrotor_single.quadrotor_obstacles import *
+from gym_art.quadrotor_single.quadrotor_obstacles import _random_obstacles
 from gym_art.quadrotor_single.quadrotor_visualization import *
 from gym_art.quadrotor_single.quad_utils import *
 import gym_art.quadrotor_single.get_state as get_state
@@ -137,7 +137,7 @@ class QuadrotorDynamics(object):
             linearity (float): linearity factor factor [0 .. 1].
             CrazyFlie: linearity=0.424
         """
-        return  (1 - linearity) * w**2 + linearity * w
+        return (1 - linearity) * w**2 + linearity * w
 
     def update_model(self, model_params):
         if self.dynamics_simplification:
@@ -541,56 +541,72 @@ class QuadrotorDynamics(object):
 
 
 # reasonable reward function for hovering at a goal and not flying too high
-def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, rew_coeff, action_prev):
+def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, rew_coeff, action_prev,
+                            quads_settle=False):
     ##################################################
     ## log to create a sharp peak at the goal
     dist = np.linalg.norm(goal - dynamics.pos)
-    cost_pos_raw = dist
-    cost_pos = rew_coeff["pos"] * cost_pos_raw
+    # cost_pos_raw = dist
+    # cost_pos = rew_coeff["pos"] * cost_pos_raw  # default pos coef: 1.0
+    cost_pos_raw = 2.0 * np.log(1.0 + dist)
+    cost_pos = rew_coeff["pos"] * cost_pos_raw  # default pos coef: 1.0
+    # cost_pos_raw = 1.0 / (1.0 + dist)
+    # cost_pos = rew_coeff['pos'] * cost_pos_raw
+
+    vel_coeff = rew_coeff["vel"]
+    if dist <= 1.0 and quads_settle:
+        vel_coeff = 0.8  # penalize movement once drones are close to the goal
 
     ##################################################
     # penalize amount of control effort
     cost_effort_raw = np.linalg.norm(action)
     cost_effort = rew_coeff["effort"] * cost_effort_raw
-    
+    # cost_effort_raw = np.sum(np.square(action))
+    # cost_effort = -rew_coeff["effort"] * np.exp(-0.5 * cost_effort_raw)  # default 0.05
+
     dact = action - action_prev
     cost_act_change_raw = (dact[0]**2 + dact[1]**2 + dact[2]**2 + dact[3]**2)**0.5
-    cost_act_change = rew_coeff["action_change"] * cost_act_change_raw
+    cost_act_change = rew_coeff["action_change"] * cost_act_change_raw  # default 0.0
 
     ##################################################
     ## loss velocity
     cost_vel_raw = np.linalg.norm(dynamics.vel)
-    cost_vel = rew_coeff["vel"] * cost_vel_raw
+    cost_vel = vel_coeff * cost_vel_raw  # default 0.0
 
     ##################################################
-    ## Loss orientation
+    ## Loss orientation (upward)
     cost_orient_raw = -dynamics.rot[2, 2]
-    cost_orient = rew_coeff["orient"] * cost_orient_raw
-    
+    cost_orient = rew_coeff["orient"] * cost_orient_raw  # default 1.0
+    # cost_orient_raw = dynamics.rot[2, 2]
+    # cost_orient = rew_coeff["orient"] * np.clip(cost_orient_raw, 0.0, 1.0)
+
     cost_yaw_raw = -dynamics.rot[0, 0]
-    cost_yaw = rew_coeff["yaw"] * cost_yaw_raw
+    cost_yaw = rew_coeff["yaw"] * cost_yaw_raw  # default 0.0
     
     # Projection of the z-body axis to z-world axis
     # Negative, because the larger the projection the smaller the loss (i.e. the higher the reward)
-    rot_cos = ((dynamics.rot[0, 0] +  dynamics.rot[1, 1] + dynamics.rot[2, 2]) - 1.)/2.
+    rot_cos = ((dynamics.rot[0, 0] + dynamics.rot[1, 1] + dynamics.rot[2, 2]) - 1.)/2.
     #We have to clip since rotation matrix falls out of orthogonalization from time to time
     cost_rotation_raw = np.arccos(np.clip(rot_cos, -1., 1.)) #angle = arccos((trR-1)/2) See: [6]
-    cost_rotation = rew_coeff["rot"] * cost_rotation_raw
+    cost_rotation = rew_coeff["rot"] * cost_rotation_raw  # default 0.0
     
     cost_attitude_raw = np.arccos(np.clip(dynamics.rot[2, 2], -1., 1.))
-    cost_attitude = rew_coeff["attitude"] * cost_attitude_raw
+    cost_attitude = rew_coeff["attitude"] * cost_attitude_raw  # default 0.0
 
     ##################################################
     ## Loss for constant uncontrolled rotation around vertical axis
     cost_spin_raw = (dynamics.omega[0]**2 + dynamics.omega[1]**2 + dynamics.omega[2]**2)**0.5
-    cost_spin = rew_coeff["spin"] * cost_spin_raw
+    cost_spin = rew_coeff["spin"] * cost_spin_raw  # default 0.1
+    # cost_spin_raw = np.sum(dynamics.omega[0] ** 2 + dynamics.omega[1] ** 2 + dynamics.omega[2] ** 2)
+    # cost_spin = rew_coeff["spin"] * np.exp(-1.0 * cost_spin_raw)
 
     ##################################################
     ## loss crash
     cost_crash_raw = float(crashed)
-    cost_crash = rew_coeff["crash"] * cost_crash_raw
+    cost_crash = rew_coeff["crash"] * cost_crash_raw  # default 1.0
 
-    reward = -dt * np.sum([
+    # reward = cost_pos + cost_pos * (cost_orient + cost_spin) + cost_effort + cost_crash
+    reward = -(dt * rew_coeff['reward_scale']) * np.sum([
         cost_pos,
         cost_effort,
         cost_crash,
@@ -602,7 +618,8 @@ def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, re
         cost_act_change,
         cost_vel
     ])
-    
+    # cost coefs: 1.0, 1.0, 0.05, 0.1, 0.1
+    # print(-cost_pos, -cost_orient, -cost_effort, -cost_act_change, -cost_spin)
 
     rew_info = {
         "rew_main": -cost_pos,
@@ -629,7 +646,7 @@ def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, re
         "rewraw_act_change": -cost_act_change_raw,
         "rewraw_vel": -cost_vel_raw,
     }
-
+    # print(-cost_pos_raw, -cost_effort_raw, -cost_orient_raw, -cost_spin_raw)
     if np.isnan(reward) or not np.isfinite(reward):
         for key, value in locals().items():
             print('%s: %s \n' % (key, str(value)))
@@ -655,7 +672,7 @@ class QuadrotorEnv(gym.Env, gym_utils.EzPickle):
                 raw_control=True, raw_control_zero_middle=True, dim_mode='3D', tf_control=False, sim_freq=200., sim_steps=2,
                 obs_repr="xyz_vxyz_R_omega", ep_time=7, obstacles_num=0, room_size=10, init_random_state=False,
                 rew_coeff=None, sense_noise=None, verbose=False, gravity=GRAV, resample_goal=False, 
-                t2w_std=0.005, t2t_std=0.0005, excite=False, dynamics_simplification=False):
+                t2w_std=0.005, t2t_std=0.0005, excite=False, dynamics_simplification=False, controller_type=None):
         np.seterr(under='ignore')
         """
         Args:
@@ -698,6 +715,7 @@ class QuadrotorEnv(gym.Env, gym_utils.EzPickle):
         self.verbose = verbose
         self.obstacles_num = obstacles_num
         self.raw_control = raw_control
+        self.controller_type = controller_type
         self.scene = None
         self.update_sense_noise(sense_noise=sense_noise)
         self.gravity = gravity
@@ -804,7 +822,8 @@ class QuadrotorEnv(gym.Env, gym_utils.EzPickle):
             "crash": 1., 
             "orient": 1., "yaw": 0., "rot": 0., "attitude": 0.,
             "spin": 0.1,
-            "vel": 0.}
+            "vel": 0.,
+            'reward_scale': 1.0}
         rew_coeff_orig = copy.deepcopy(self.rew_coeff)
 
         if rew_coeff is not None: 
@@ -817,7 +836,7 @@ class QuadrotorEnv(gym.Env, gym_utils.EzPickle):
         orig_keys = list(rew_coeff_orig.keys())
         # Checking to make sure we didn't provide some false rew_coeffs (for example by misspelling one of the params)
         assert np.all([key in orig_keys for key in self.rew_coeff.keys()])
-        # print("rew_coeff:", self.rew_coeff)
+        print("rew_coeff:", self.rew_coeff)
 
         #########################################
         ## RESET
@@ -865,19 +884,25 @@ class QuadrotorEnv(gym.Env, gym_utils.EzPickle):
         ################################################################################
         ## SCENE
         if self.obstacles_num > 0:
-            self.obstacles = _random_obstacles(None, obstacles_num, self.room_size, self.dynamics.arm)
+            self.obstacles = _random_obstacles(None, self.obstacles_num, self.room_size, self.dynamics.arm)
         else:
             self.obstacles = None
 
         ################################################################################
         ## CONTROL
-        if self.raw_control:
+        if self.raw_control and self.controller_type == 'raw_thrust':
             if self.dim_mode == '1D': # Z axis only
                 self.controller = VerticalControl(self.dynamics, zero_action_middle=self.raw_control_zero_middle)
             elif self.dim_mode == '2D': # X and Z axes only
                 self.controller = VertPlaneControl(self.dynamics, zero_action_middle=self.raw_control_zero_middle)
             elif self.dim_mode == '3D':
                 self.controller = RawControl(self.dynamics, zero_action_middle=self.raw_control_zero_middle)
+            else:
+                raise ValueError('QuadEnv: Unknown dimensionality mode %s' % self.dim_mode)
+        elif self.controller_type == 'omega_thrust':
+            print('current controller type is: ', self.controller_type)
+            if self.dim_mode == '3D':
+                self.controller = OmegaThrustControl(self.dynamics)
             else:
                 raise ValueError('QuadEnv: Unknown dimensionality mode %s' % self.dim_mode)
         else:
@@ -891,7 +916,7 @@ class QuadrotorEnv(gym.Env, gym_utils.EzPickle):
         ## STATE VECTOR FUNCTION
         self.state_vector = getattr(get_state, "state_" + self.obs_repr)
 
-    
+
 
     def make_observation_space(self):
         self.wall_offset = 0.3
@@ -901,7 +926,7 @@ class QuadrotorEnv(gym.Env, gym_utils.EzPickle):
             "vxyz": [-self.dynamics.vxyz_max * np.ones(3), self.dynamics.vxyz_max * np.ones(3)],
             "vxyzr": [-self.dynamics.vxyz_max * np.ones(3), self.dynamics.vxyz_max * np.ones(3)],
             "acc": [-self.dynamics.acc_max * np.ones(3), self.dynamics.acc_max * np.ones(3)],
-            "R": [-np.ones(9), np.ones(9)], 
+            "R": [-np.ones(9), np.ones(9)],
             "omega": [-self.dynamics.omega_max * np.ones(3), self.dynamics.omega_max * np.ones(3)], 
             "t2w": [0. * np.ones(1), 5.* np.ones(1)], 
             "t2t": [0. * np.ones(1), 1.* np.ones(1)], 
@@ -941,8 +966,7 @@ class QuadrotorEnv(gym.Env, gym_utils.EzPickle):
         self.actions[1] = copy.deepcopy(self.actions[0])
         self.actions[0] = copy.deepcopy(action)
         # print('actions_norm: ', np.linalg.norm(self.actions[0]-self.actions[1]))
-
-        if self.excite and self.tick % 5 == 0:
+        if self.excite and self.tick % 250 == 0:
             ## change the goal every 5 time step
             self.goal = np.concatenate([
                 np.random.uniform(low=-0.5, high=0.5, size=(2,)),
@@ -967,17 +991,16 @@ class QuadrotorEnv(gym.Env, gym_utils.EzPickle):
                                                       np.clip(self.dynamics.pos,
                                                               a_min=self.room_box[0],
                                                               a_max=self.room_box[1]))
-
         self.time_remain = self.ep_len - self.tick
-        reward, rew_info = compute_reward_weighted(self.dynamics, self.goal, action, self.dt, self.crashed, self.time_remain, 
+        reward, rew_info = compute_reward_weighted(self.dynamics, self.goal, self.controller.action, self.dt, self.crashed, self.time_remain,
                             rew_coeff=self.rew_coeff, action_prev=self.actions[1])
         self.tick += 1
-        done = self.tick > self.ep_len #or self.crashed
+        done = self.tick >= self.ep_len or self.crashed
         sv = self.state_vector(self)
         
         self.traj_count += int(done)
         
-        ## TODO: OPTIMIZATION: sv_comp should be a dictionary formed when state() function is called
+        ## TODO: OPTIMIZATION: sv_complete should be a dictionary formed when state() function is called
         sv_comp = np.split(sv, self.obs_comp_end[:-1], axis=0)
         obs_comp = {
             "xyz": [self.dynamics.pos],
@@ -1504,7 +1527,7 @@ def parse_quad_args(argv):
         help="Simple benchmark, i.e. running time"
     )
 
-    args = parser.parse_args(args=argv)
+    args = parser.parse_args()
     return args
 
 

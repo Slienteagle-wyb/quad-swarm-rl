@@ -1,8 +1,6 @@
 import copy
-
 import gym
 import numpy as np
-
 from sample_factory.envs.env_utils import RewardShapingInterface, TrainingInfoInterface
 
 

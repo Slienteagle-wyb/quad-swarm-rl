@@ -34,7 +34,7 @@ class QuadrotorEnvMulti(gym.Env):
                  quads_obstacle_num=0, quads_obstacle_type='sphere', quads_obstacle_size=0.0, collision_force=True,
                  adaptive_env=False, obstacle_traj='gravity', local_obs=-1, collision_hitbox_radius=2.0,
                  collision_falloff_radius=2.0, collision_smooth_max_penalty=10.0,
-                 local_metric='dist', local_coeff=0.0, use_replay_buffer=False,
+                 local_metric='dist', local_coeff=0.0, use_replay_buffer=False, controller_type=None,
                  obstacle_obs_mode='relative', obst_penalty_fall_off=10.0, vis_acc_arrows=False,
                  viz_traces=25, viz_trace_nth_step=1):
 
@@ -49,16 +49,15 @@ class QuadrotorEnvMulti(gym.Env):
             self.num_use_neighbor_obs = local_obs
 
         self.local_metric = local_metric
-        self.local_coeff = local_coeff
+        self.local_coeff = local_coeff  # for single quad, this is set to 1.0
         # Set to True means that sample_factory will treat it as a multi-agent vectorized environment even with
         # num_agents=1. More info, please look at sample-factory: envs/quadrotors/wrappers/reward_shaping.py
         self.is_multiagent = True
         self.room_dims = (room_length, room_width, room_height)
 
         self.envs = []
-        self.adaptive_env = adaptive_env
+        self.adaptive_env = adaptive_env  # default is false
         self.quads_view_mode = quads_view_mode
-
         for i in range(self.num_agents):
             e = QuadrotorSingle(
                 dynamics_params, dynamics_change, dynamics_randomize_every, dyn_sampler_1, dyn_sampler_2,
@@ -67,7 +66,7 @@ class QuadrotorEnvMulti(gym.Env):
                 rew_coeff, sense_noise, verbose, gravity, t2w_std, t2t_std, excite, dynamics_simplification,
                 quads_use_numba, self.swarm_obs, self.num_agents, quads_settle, quads_settle_range_meters,
                 quads_vel_reward_out_range, quads_view_mode, quads_obstacle_mode, quads_obstacle_num,
-                self.num_use_neighbor_obs
+                self.num_use_neighbor_obs, controller_type
             )
             self.envs.append(e)
 
@@ -82,7 +81,7 @@ class QuadrotorEnvMulti(gym.Env):
         # reward shaping
         self.rew_coeff = dict(
             pos=1., effort=0.05, action_change=0., crash=1., orient=1., yaw=0., rot=0., attitude=0., spin=0.1, vel=0.,
-            quadcol_bin=0., quadcol_bin_smooth_max=0.,
+            quadcol_bin=0., quadcol_bin_smooth_max=0., precede=1.0,
             quadsettle=0., quadcol_bin_obst=0., quadcol_bin_obst_smooth_max=0.0
         )
         rew_coeff_orig = copy.deepcopy(self.rew_coeff)
@@ -331,7 +330,6 @@ class QuadrotorEnvMulti(gym.Env):
         self.scenario.reset()
         self.quads_formation_size = self.scenario.formation_size
         self.goal_central = np.mean(self.scenario.goals, axis=0)
-
         # try to activate replay buffer if enabled
         if self.use_replay_buffer and not self.activate_replay_buffer:
             self.crashes_in_recent_episodes.append(self.crashes_last_episode)
@@ -343,15 +341,17 @@ class QuadrotorEnvMulti(gym.Env):
             new_length, new_width, new_height = np.random.randint(1, 31, 3)
             self.room_dims = (new_length, new_width, new_height)
 
+        # assign the goals for each quad in the scenario accord to the quad formation
         for i, e in enumerate(self.envs):
             e.goal = self.scenario.goals[i]
             e.rew_coeff = self.rew_coeff
-            e.update_env(*self.room_dims)
+            e.update_env(*self.room_dims)  # update the room box
 
             observation = e.reset()
             obs.append(observation)
 
         # extend obs to see neighbors
+        # the observation is formed in a stacking fashion
         obs = self.add_neighborhood_obs(obs)
 
         # Reset Obstacles
@@ -377,10 +377,8 @@ class QuadrotorEnvMulti(gym.Env):
     # noinspection PyTypeChecker
     def step(self, actions):
         obs, rewards, dones, infos = [], [], [], []
-
         for i, a in enumerate(actions):
             self.envs[i].rew_coeff = self.rew_coeff
-
             observation, reward, done, info = self.envs[i].step(a)
             obs.append(observation)
             rewards.append(reward)
@@ -559,8 +557,8 @@ class QuadrotorEnvMulti(gym.Env):
                         infos[i]['episode_extra_stats']['num_collisions_obst_quad'] = self.obst_quad_collisions_per_episode
                         infos[i]['episode_extra_stats'][f'num_collisions_obst_{self.scenario.name()}'] = self.obst_quad_collisions_per_episode
 
-            obs = self.reset()
-            dones = [True] * len(dones)  # terminate the episode for all "sub-envs"
+            # obs = self.reset()
+            done0s = [True] * len(dones)  # terminate the episode for all "sub-envs"
 
         return obs, rewards, dones, infos
 

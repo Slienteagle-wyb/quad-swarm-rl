@@ -208,6 +208,8 @@ class OmegaThrustControl(object):
     def __init__(self, dynamics):
         jacobian = quadrotor_jacobian(dynamics)
         self.Jinv = np.linalg.inv(jacobian)
+        self.step_func = self.step
+        self.action = None
 
     def action_space(self, dynamics):
         circle_per_sec = 2 * np.pi
@@ -221,7 +223,15 @@ class OmegaThrustControl(object):
 
     # modifies the dynamics in place.
     #@profile
-    def step(self, dynamics, action, dt):
+    def step(self, dynamics, action, goal, dt, observation=None):
+        # rescale the action from (-1, 1)
+        action_space = self.action_space(dynamics)
+        action_low = action_space.low
+        action_high = action_space.high
+        omega_scale = action_high[1:]
+        action[1:] *= omega_scale
+        action = np.clip(action, action_low, action_high)
+
         kp = 5.0 # could be more aggressive
         omega_err = dynamics.omega - action[1:]
         dw_des = -kp * omega_err
@@ -231,7 +241,7 @@ class OmegaThrustControl(object):
         thrusts[thrusts < 0] = 0
         thrusts[thrusts > 1] = 1
         dynamics.step(thrusts, dt)
-
+        self.action = thrusts.copy()
 
 # TODO: this has not been tested well yet.
 class VelocityYawControl(object):
@@ -285,7 +295,7 @@ class VelocityYawControl(object):
 class NonlinearPositionController(object):
     #@profile
     def __init__(self, dynamics, tf_control=True):
-        import tensorflow as tf
+        # import tensorflow as tf
         jacobian = quadrotor_jacobian(dynamics)
         self.Jinv = np.linalg.inv(jacobian)
         ## Jacobian inverse for our quadrotor
