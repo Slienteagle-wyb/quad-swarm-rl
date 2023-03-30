@@ -148,6 +148,25 @@ def quadrotor_3dmodel(model, quad_id=0):
     return r3d.Transform(np.eye(4), links)
 
 
+def rectangular_gate_model(inner_width=0.5, inner_height=0.5, thickness=0.03, color=(0.8, 0.8, 0.8)):
+    import gym_art.quadrotor_multi.rendering3d as r3d
+    links = []
+    # prepare the rot for the rectangular gate
+    rot_top = r3d.trans_and_rot(t=(0, 0, inner_height / 2), r=rpy2R(0, 0, np.pi / 2))
+    rot_down = r3d.trans_and_rot(t=(0, 0, -inner_height / 2), r=rpy2R(0, 0, np.pi / 2))
+    rot_left = r3d.trans_and_rot(t=(0, -inner_width / 2, 0), r=rpy2R(0, np.pi / 2, 0))
+    rot_right = r3d.trans_and_rot(t=(0, inner_width / 2, 0), r=rpy2R(0, np.pi / 2, 0))
+    # prepare each frame of the rectangular gate
+    top_frame = r3d.transform_and_color(rot_top, color, r3d.box(inner_width, thickness, thickness))
+    down_frame = r3d.transform_and_color(rot_down, color, r3d.box(inner_width, thickness, thickness))
+    left_frame = r3d.transform_and_color(rot_left, color, r3d.box(inner_height, thickness, thickness))
+    right_frame = r3d.transform_and_color(rot_right, color, r3d.box(inner_height, thickness, thickness))
+    # ensemble the rectangular gate
+    links.extend([top_frame, down_frame, left_frame, right_frame])
+
+    return r3d.Transform(np.eye(4), links)
+
+
 def quadrotor_simple_3dmodel(diam):
     import gym_art.quadrotor_multi.rendering3d as r3d
 
@@ -206,7 +225,7 @@ class Quadrotor3DScene:
         else:
             self.goal_forced_diameter = None
         self.update_goal_diameter()
-        
+
         if self.viepoint == 'chase':
             self.chase_cam = ChaseCamera(view_dist=self.diameter * 15)
         elif self.viepoint == 'side':
@@ -222,7 +241,7 @@ class Quadrotor3DScene:
             self.diameter = 2 * self.quad_arm
         else:
             self.diameter = 2 * np.linalg.norm(self.model.params["motor_pos"]["xyz"][:2])
-         
+
         if self.goal_forced_diameter:
             self.goal_diameter = self.goal_forced_diameter
         else:
@@ -246,20 +265,21 @@ class Quadrotor3DScene:
         self.have_state = False
 
         self.shadow_transform = r3d.transform_and_color(
-            np.eye(4), (0, 0, 0, 0.4), r3d.circle(0.75*self.diameter, 32))
+            np.eye(4), (0, 0, 0, 0.4), r3d.circle(0.75 * self.diameter, 32))
 
         # TODO make floor size or walls to indicate world_box
         floor = r3d.ProceduralTexture(r3d.random_textype(), (0.15, 0.25),
-            r3d.rect((1000, 1000), (0, 100), (0, 100)))
+                                      r3d.rect((1000, 1000), (0, 100), (0, 100)))
 
         self.update_goal_diameter()
         self.chase_cam.view_dist = self.diameter * 15
 
-        self.create_goal(goal=(0,0,0))
-        
+        # self.create_goal(goal=(0,0,0))
+        # self.target_gate = rectangular_gate_model()
+
         bodies = [r3d.BackToFront([floor, self.shadow_transform]),
-            self.goal_transform, self.quad_transform] + self.goal_arrows
-        
+                  self.goal_transform, self.quad_transform] + self.goal_arrows
+
         if self.obstacles:
             bodies += self.obstacles.bodies
 
@@ -267,32 +287,30 @@ class Quadrotor3DScene:
         batch = r3d.Batch()
         world.build(batch)
 
-        self.scene = r3d.Scene(batches=[batch], bgcolor=(0,0,0))
+        self.scene = r3d.Scene(batches=[batch], bgcolor=(0, 0, 0))
         self.scene.initialize()
 
     def create_goal(self, goal):
         r3d = self.r3d
+        # # Goal
+        self.goal_transform = r3d.transform_and_color(np.eye(4), (0.85, 0.55, 0),
+                                                      r3d.sphere(self.goal_diameter / 2, 18))
 
-        ## Goal
-        self.goal_transform = r3d.transform_and_color(np.eye(4),
-            (0.85, 0.55, 0), r3d.sphere(self.goal_diameter/2, 18))
-        
-        goal_arr_len, goal_arr_r, goal_arr_sect  = 1.5 * self.goal_diameter, 0.02 * self.goal_diameter, 10
+        goal_arr_len, goal_arr_r, goal_arr_sect = 1.5 * self.goal_diameter, 0.02 * self.goal_diameter, 10
         self.goal_arrows = []
-
         self.goal_arrows_rot = []
-        self.goal_arrows_rot.append(np.array([[0,0,1],[0,1,0],[-1,0,0]]))
-        self.goal_arrows_rot.append(np.array([[1,0,0],[0,0,1],[0,-1,0]]))
+        self.goal_arrows_rot.append(np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]]))
+        self.goal_arrows_rot.append(np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]]))
         self.goal_arrows_rot.append(np.eye(3))
 
         self.goal_arrows.append(r3d.transform_and_color(
-            np.array([[0,0,1,0],[0,1,0,0],[-1,0,0,0],[0,0,0,1]]), 
+            np.array([[0, 0, 1, 0], [0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1]]),
             (1., 0., 0.), r3d.arrow(goal_arr_r, goal_arr_len, goal_arr_sect)))
         self.goal_arrows.append(r3d.transform_and_color(
-            np.array([[1,0,0,0],[0,0,1,0],[0,-1,0,0],[0,0,0,1]]), 
+            np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, -1, 0, 0], [0, 0, 0, 1]]),
             (0., 1., 0.), r3d.arrow(goal_arr_r, goal_arr_len, goal_arr_sect)))
         self.goal_arrows.append(r3d.transform_and_color(
-            np.eye(4), 
+            np.eye(4),
             (0., 0., 1.), r3d.arrow(goal_arr_r, goal_arr_len, goal_arr_sect)))
 
     def update_goal(self, goal):
@@ -303,7 +321,6 @@ class Quadrotor3DScene:
         self.goal_arrows[0].set_transform(r3d.trans_and_rot(goal[0:3], self.goal_arrows_rot[0]))
         self.goal_arrows[1].set_transform(r3d.trans_and_rot(goal[0:3], self.goal_arrows_rot[1]))
         self.goal_arrows[2].set_transform(r3d.trans_and_rot(goal[0:3], self.goal_arrows_rot[2]))
-
 
     def update_model(self, model):
         self.model = model
@@ -328,14 +345,14 @@ class Quadrotor3DScene:
             self.chase_cam.step(dynamics.pos, dynamics.vel)
             self.have_state = True
             self.fpv_lookat = dynamics.look_at()
-            
+
             self.update_goal(goal=goal)
 
             matrix = r3d.trans_and_rot(dynamics.pos, dynamics.rot)
             self.quad_transform.set_transform_nocollide(matrix)
 
             shadow_pos = 0 + dynamics.pos
-            shadow_pos[2] = 0.001 # avoid z-fighting
+            shadow_pos[2] = 0.001  # avoid z-fighting
             matrix = r3d.translate(shadow_pos)
             self.shadow_transform.set_transform_nocollide(matrix)
 
@@ -343,7 +360,7 @@ class Quadrotor3DScene:
         r3d = self.r3d
 
         if mode == "human":
-            if self.window_target is None: 
+            if self.window_target is None:
                 self.window_target = r3d.WindowTarget(self.window_w, self.window_h, resizable=self.resizable)
                 self._make_scene()
             self.update_state(dynamics=dynamics, goal=goal)
@@ -362,7 +379,7 @@ class Quadrotor3DScene:
     def render_obs(self, dynamics, goal):
         r3d = self.r3d
 
-        if self.obs_target is None: 
+        if self.obs_target is None:
             self.obs_target = r3d.FBOTarget(self.obs_hw[0], self.obs_hw[1])
             self._make_scene()
         self.update_state(dynamics=dynamics, goal=goal)

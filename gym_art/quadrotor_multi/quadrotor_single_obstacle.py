@@ -6,6 +6,7 @@ EPS = 1e-6
 GRAV = 9.81  # default gravitational constant
 TRAJ_LIST = ['gravity', 'electron']
 
+
 class SingleObstacle:
     def __init__(self, max_init_vel=1., init_box=2.0, mode='no_obstacles', shape='sphere', size=0.0, quad_size=0.04,
                  dt=0.05, traj='gravity', obs_mode='relative'):
@@ -25,16 +26,19 @@ class SingleObstacle:
         self.shape_list = OBSTACLES_SHAPE_LIST
         self.obs_mode = obs_mode
 
-    def reset(self, set_obstacle=None, formation_size=0.0, goal_central=np.array([0., 0., 2.]), shape='sphere', quads_pos=None, quads_vel=None):
+    def reset(self, set_obstacle=None, formation_size=0.0, goal_central=np.array([0., 0., 2.]), shape='sphere',
+              quads_pos=None, quads_vel=None, reset_pos=None):
         if set_obstacle is None:
             raise ValueError('set_obstacle is None')
 
         self.formation_size = formation_size
         self.goal_central = goal_central
+        self.pos = reset_pos
 
         # Reset shape and size
         self.shape = shape
-        self.size = np.random.uniform(low=0.15, high=0.5)
+        if self.size == 0:
+            self.size = np.random.uniform(low=0.15, high=0.5)
 
         if set_obstacle:
             if self.mode == 'static':

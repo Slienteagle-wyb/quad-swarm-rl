@@ -20,7 +20,8 @@ class MultiObstacles:
                                       quad_size=quad_size, dt=dt, traj=traj, obs_mode=obs_mode)
             self.obstacles.append(obstacle)
 
-    def reset(self, obs=None, quads_pos=None, quads_vel=None, set_obstacles=None, formation_size=0.0, goal_central=np.array([0., 0., 2.])):
+    def reset(self, obs=None, quads_pos=None, quads_vel=None, set_obstacles=None, formation_size=0.0,
+              goal_central=np.array([0., 0., 2.]), obst_init_pos_list=None):
         if self.num_obstacles <= 0:
             return obs
         if set_obstacles is None:
@@ -33,9 +34,10 @@ class MultiObstacles:
             shape_list = np.array(shape_list)
 
         for i, obstacle in enumerate(self.obstacles):
+            assert len(set_obstacles) == len(obst_init_pos_list)
             obst_obs = obstacle.reset(set_obstacle=set_obstacles[i], formation_size=formation_size,
                                       goal_central=goal_central, shape=shape_list[i], quads_pos=quads_pos,
-                                      quads_vel=quads_vel)
+                                      quads_vel=quads_vel, reset_pos=obst_init_pos_list[i])
 
             obs = np.concatenate((obs, obst_obs), axis=1)
 

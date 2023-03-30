@@ -89,7 +89,7 @@ class QuadrotorDynamics(object):
         # cw = 1 ; ccw = -1 [ccw, cw, ccw, cw]
         # Reference: https://docs.google.com/document/d/1wZMZQ6jilDbj0JtfeYt0TonjxoMPIgHwYbrFrMNls84/edit
         self.omega_max = 40. #rad/s The CF sensor can only show 35 rad/s (2000 deg/s), we allow some extra
-        self.vxyz_max = 3. #m/s
+        self.vxyz_max = 10. #m/s
         self.gravity = gravity
         self.acc_max = 3. * GRAV
 
@@ -559,6 +559,7 @@ def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, re
 
     ##################################################
     # penalize amount of control effort
+
     cost_effort_raw = np.linalg.norm(action)
     cost_effort = rew_coeff["effort"] * cost_effort_raw
     # cost_effort_raw = np.sum(np.square(action))
@@ -606,6 +607,7 @@ def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, re
     cost_crash = rew_coeff["crash"] * cost_crash_raw  # default 1.0
 
     # reward = cost_pos + cost_pos * (cost_orient + cost_spin) + cost_effort + cost_crash
+    # dt: 1/200
     reward = -(dt * rew_coeff['reward_scale']) * np.sum([
         cost_pos,
         cost_effort,
@@ -646,6 +648,9 @@ def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, re
         "rewraw_act_change": -cost_act_change_raw,
         "rewraw_vel": -cost_vel_raw,
     }
+
+    print(-cost_pos_raw, -cost_effort_raw, -cost_spin_raw, -cost_orient_raw)
+
     # print(-cost_pos_raw, -cost_effort_raw, -cost_orient_raw, -cost_spin_raw)
     if np.isnan(reward) or not np.isfinite(reward):
         for key, value in locals().items():

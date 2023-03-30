@@ -6,16 +6,19 @@ from gym_art.quadrotor_multi.quad_scenarios_utils import QUADS_PARAMS_DICT, upda
     update_layer_dist, get_formation_range, get_goal_by_formation, get_z_value, QUADS_MODE_LIST, \
     QUADS_MODE_LIST_OBSTACLES, QUADS_MODE_LIST_SIMPLE
 from gym_art.quadrotor_multi.quad_utils import generate_points, get_grid_dim_number
+from gym_art.quadrotor_multi.trajectory_utils import *
 
-
-def create_scenario(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size):
+def create_scenario(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                    quads_formation_size, track_gate_nums=None):
     cls = eval('Scenario_' + quads_mode)
-    scenario = cls(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size)
+    scenario = cls(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                   quads_formation_size, track_gate_nums=track_gate_nums)
     return scenario
 
 
 class QuadrotorScenario:
-    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size):
+    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                 quads_formation_size, track_gate_nums):
         self.quads_mode = quads_mode
         self.envs = envs
         self.num_agents = num_agents
@@ -189,8 +192,10 @@ class Scenario_static_diff_goal(QuadrotorScenario):
 
 
 class Scenario_dynamic_same_goal(QuadrotorScenario):
-    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size):
-        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size)
+    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                 quads_formation_size, track_gate_nums):
+        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                         quads_formation_size, track_gate_nums)
         # teleport every [4.0, 6.0] secs
         duration_time = 5.0
         self.control_step_for_sec = int(duration_time * self.envs[0].control_freq)
@@ -222,8 +227,10 @@ class Scenario_dynamic_same_goal(QuadrotorScenario):
 
 
 class Scenario_dynamic_diff_goal(QuadrotorScenario):
-    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size):
-        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size)
+    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                 quads_formation_size, track_gate_nums):
+        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                         quads_formation_size, track_gate_nums)
         # teleport every [4.0, 6.0] secs
         duration_time = 5.0
         self.control_step_for_sec = int(duration_time * self.envs[0].control_freq)
@@ -309,7 +316,7 @@ class Scenario_ep_rand_bezier(QuadrotorScenario):
         room_dims = np.array(self.room_dims) - self.formation_size
         # min and max distance the goal can spawn away from its current location. 30 = empirical upper bound on
         # velocity that the drones can handle.
-        max_dist = min(4.0, max(room_dims))
+        max_dist = min(4.0, max(room_dims))  # default is 30
         min_dist = max_dist / 2
         if tick % control_steps == 0 or tick == 1:
             # sample a new goal pos that's within the room boundaries and satisfies the distance constraint
@@ -345,8 +352,10 @@ class Scenario_ep_rand_bezier(QuadrotorScenario):
 
 
 class Scenario_swap_goals(QuadrotorScenario):
-    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size):
-        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size)
+    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                 quads_formation_size, track_gate_nums):
+        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                         quads_formation_size, track_gate_nums)
         # teleport every [4.0, 6.0] secs
         duration_time = 5.0
         self.control_step_for_sec = int(duration_time * self.envs[0].control_freq)
@@ -408,8 +417,10 @@ class Scenario_circular_config(QuadrotorScenario):
 
 
 class Scenario_dynamic_formations(QuadrotorScenario):
-    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size):
-        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size)
+    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                 quads_formation_size, track_gate_nums):
+        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                         quads_formation_size, track_gate_nums)
         # if increase_formation_size is True, increase the formation size
         # else, decrease the formation size
         self.increase_formation_size = True
@@ -452,8 +463,10 @@ class Scenario_dynamic_formations(QuadrotorScenario):
 
 
 class Scenario_swarm_vs_swarm(QuadrotorScenario):
-    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size):
-        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size)
+    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                 quads_formation_size, track_gate_nums):
+        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                         quads_formation_size, track_gate_nums)
         # teleport every [4.0, 6.0] secs
         duration_time = 5.0
         self.control_step_for_sec = int(duration_time * self.envs[0].control_freq)
@@ -575,8 +588,10 @@ class Scenario_tunnel(QuadrotorScenario):
 
 
 class Scenario_run_away(QuadrotorScenario):
-    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size):
-        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size)
+    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                 quads_formation_size, track_gate_nums):
+        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                         quads_formation_size, track_gate_nums)
 
     def update_goals(self):
         self.goals = self.generate_goals(self.num_agents, self.formation_center, layer_dist=self.layer_dist)
@@ -614,8 +629,10 @@ class Scenario_run_away(QuadrotorScenario):
 
 
 class Scenario_mix(QuadrotorScenario):
-    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size):
-        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation, quads_formation_size)
+    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                 quads_formation_size, track_gate_nums):
+        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                         quads_formation_size, track_gate_nums)
         self.room_dims_callback = room_dims_callback
 
         obst_mode = self.envs[0].obstacle_mode
@@ -626,7 +643,7 @@ class Scenario_mix(QuadrotorScenario):
         if num_agents == 1:
             self.quads_mode_list = QUADS_MODE_LIST_SIMPLE
 
-        # Check whether use obstacles or not
+        # Check whether you use obstacles or not
         if obst_mode == 'no_obstacles':
             self.quads_mode_list = QUADS_MODE_LIST
         else:
@@ -661,3 +678,140 @@ class Scenario_mix(QuadrotorScenario):
         self.scenario.reset()
         self.goals = self.scenario.goals
         self.formation_size = self.scenario.formation_size
+
+
+class Scenario_traverse_gate(QuadrotorScenario):
+    def __init__(self, quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                 quads_formation_size, track_gate_nums):
+        super().__init__(quads_mode, envs, num_agents, room_dims, room_dims_callback, rew_coeff, quads_formation,
+                         quads_formation_size, track_gate_nums)
+        self.track_gate_nums = track_gate_nums
+        self.formation_center = np.array([0.0, 0.0, 5.0])
+        self.gate_poses = None
+        self.gate_poses_spherical = None
+        self.scenario_tick = 0
+        self.curr_gate_ptr = 0
+        self.prev_gate_ptr = 0
+        self.prev_preceded_seg_len = 0
+        self.gate_width = 0.5
+        self.d_max = 2.5
+        self.gate_pass_threshold = 0.36
+
+    def update_goals(self):
+        pass
+
+    def step(self, infos, rewards, drone_pos):
+        self.scenario_tick += 1
+        curr_tracking_gate = self.gate_poses[self.curr_gate_ptr]
+        relative_pos = curr_tracking_gate.position.to_numpy_array() - drone_pos
+        # calculate the included angle between the relative pos vector and gate's normal in \
+        # the gate's body frame, we always set the gate face toward the X axis.
+        gate_normal_body = np.array([0, 1, 0])
+        point_angle = included_angle(relative_pos, gate_normal_body)
+        point_angle_degree = point_angle * 180 / np.pi
+        racing_done = False
+
+        # # reward shaping
+        # calculate the preceded incremental distance for r_p
+        if self.curr_gate_ptr == 0:
+            g_1 = self.formation_center
+        else:
+            g_1 = self.gate_poses[self.curr_gate_ptr - 1].position.to_numpy_array()
+        g_2 = self.gate_poses[self.curr_gate_ptr].position.to_numpy_array()
+        curr_preceded_seg_len = (drone_pos - g_1).dot(g_2 - g_1) / np.linalg.norm(g_2 - g_1)
+        curr_preceded_seg_percent = curr_preceded_seg_len / np.linalg.norm(g_2 - g_1)
+        r_p = curr_preceded_seg_len - self.prev_preceded_seg_len
+
+        self.prev_preceded_seg_len = curr_preceded_seg_len
+        # calculate the distance from drone to the gate's plane and normal
+        d_plane_g2 = np.linalg.norm(relative_pos) * np.cos(point_angle)
+        f = np.maximum(1 - (d_plane_g2 / self.d_max), 0.0)
+        d_normal_g2 = np.linalg.norm(relative_pos) * np.sin(point_angle)
+        v = np.maximum((1 - f) * (self.gate_width / 6.0), 0.05)
+        r_s = -f**2 * (1 - np.exp(-d_normal_g2**2 / v * 0.5))
+
+        infos['rewards']['rewraw_progress'] = r_p if self.scenario_tick > 1 else 0.0
+        infos['rewards']['rewraw_safety'] = r_s
+
+        # # check whether the drone is out of the sight of the gate
+        # out_of_sight = False
+        # projected_angle = included_angle(drone_pos - g_1, gate_normal_body)
+        # d_plane_g1 = np.linalg.norm(drone_pos - g_1) * np.cos(projected_angle)
+        # d_normal_g1 = np.linalg.norm(drone_pos - g_1) * np.sin(projected_angle)
+        # if projected_angle > 90.0 / 2.0 or point_angle > 90.0 / 2.0:
+        #     if d_plane_g1 < self.gate_width and d_normal_g1 < self.gate_width:
+        #         print(np.degrees(projected_angle), np.degrees(point_angle), d_plane_g1, d_normal_g1)
+        #         out_of_sight = False
+        #     elif d_plane_g2 < self.gate_width and d_normal_g2 < self.gate_width:
+        #         print(np.degrees(projected_angle), np.degrees(point_angle), d_plane_g2, d_normal_g2)
+        #         out_of_sight = False
+        #     else:
+        #         out_of_sight = True
+        #         print('the drone is out of sight of the gate when wandering')
+        # if out_of_sight:
+        #     racing_done = True
+        #     return infos, rewards, racing_done
+
+        # # check whether the drone is out of the sight of the gate
+        relative_dist = np.linalg.norm(relative_pos)
+        if relative_dist > R_RANGE[-1] + self.gate_width:
+            racing_done = True
+            r_terminal = -np.minimum((relative_dist / self.gate_width) ** 2, 20)
+            infos['rewards']['rewraw_terminal'] = r_terminal
+            print('the drone is out of the range of the gate {0} at {1} env step'.format(self.curr_gate_ptr, self.scenario_tick))
+            return infos, rewards, racing_done
+
+        # # check whether the drone has passed the gate, collided or just passed by.
+        quad_arm = infos['dyn_params']['arm'][0]  # default value is 0.0459
+
+        r_terminal = 0
+        if curr_preceded_seg_percent > 0.96:
+            if d_normal_g2 > self.gate_width / 2 + quad_arm:
+                racing_done = True
+                # r_terminal = -np.minimum((np.linalg.norm(relative_pos) / self.gate_width) ** 2, 20)
+                infos['rewards']['rewraw_terminal'] = r_terminal
+                print('the drone just miss the gate {0} at {1} env step'.format(self.curr_gate_ptr, self.scenario_tick))
+                return infos, rewards, racing_done
+            elif self.gate_width / 2 - quad_arm < d_normal_g2 <= self.gate_width / 2 + quad_arm:
+                racing_done = True
+                r_terminal = -np.minimum((np.linalg.norm(relative_pos) / self.gate_width) ** 2, 20)
+                infos['rewards']['rewraw_terminal'] = r_terminal
+                print('the drone has collided the gate {0} at {1} env step'.format(self.curr_gate_ptr, self.scenario_tick))
+                return infos, rewards, racing_done
+            else:
+                self.prev_gate_ptr = self.curr_gate_ptr
+                self.curr_gate_ptr += 1
+                self.prev_preceded_seg_len = 0
+                r_terminal = np.minimum(5 * (self.gate_width / d_normal_g2), 20)
+                if self.curr_gate_ptr == self.track_gate_nums:
+                    racing_done = True
+                    infos['rewards']['rewraw_terminal'] = r_terminal
+                    print('the drone has passed all the gates', self.scenario_tick)
+                    return infos, rewards, racing_done
+                else:
+                    infos['rewards']['rewraw_terminal'] = r_terminal
+                    print('the drone has passed the gate {0} at {1} env step.'.format(self.curr_gate_ptr, self.scenario_tick))
+                    return infos, rewards, racing_done
+
+        infos['rewards']['rewraw_terminal'] = r_terminal
+
+        return infos, rewards, racing_done
+
+    def reset(self):
+        # Reset formation and related parameters
+        self.update_formation_and_relate_param()
+        self.curr_gate_ptr = 0
+        self.prev_preceded_seg_len = 0
+        self.scenario_tick = 0
+        # generate a new random track
+        # gate_poses: list of Vector3, gate_poses_spherical: list of (r, theta, phi)
+        gate_poses, gate_poses_spherical = generate_random_track(self.formation_center, self.track_gate_nums)
+        curr_tracking_goal = gate_poses[0].position
+        self.goals = (curr_tracking_goal.to_numpy_array(), )
+        self.gate_poses = gate_poses
+        self.gate_poses_spherical = gate_poses_spherical
+
+    def update_formation_size(self, new_formation_size):
+        if new_formation_size != self.formation_size:
+            self.formation_size = new_formation_size if new_formation_size > 0.0 else 0.0
+            self.update_goals()

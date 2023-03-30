@@ -87,7 +87,7 @@ class QuadrotorDynamics:
         # cw = 1 ; ccw = -1 [ccw, cw, ccw, cw]
         # Reference: https://docs.google.com/document/d/1wZMZQ6jilDbj0JtfeYt0TonjxoMPIgHwYbrFrMNls84/edit
         self.omega_max = 40.  # rad/s The CF sensor can only show 35 rad/s (2000 deg/s), we allow some extra
-        self.vxyz_max = 3.  # m/s
+        self.vxyz_max = 10.  # m/s
         self.gravity = gravity
         self.acc_max = 3. * GRAV
 
@@ -447,12 +447,17 @@ class QuadrotorDynamics:
 
     def step1_numba(self, thrust_cmds, dt, thrust_noise):
         self.motor_tau_up, self.motor_tau_down, self.thrust_rot_damp, self.thrust_cmds_damp, self.torques, \
-        self.torque, self.rot, self.since_last_svd, self.omega_dot, self.omega, self.pos, thrust, rotor_drag_force = \
-            calculate_torque_integrate_rotations_and_update_omega(thrust_cmds, dt, EPS, self.motor_damp_time_up, self.motor_damp_time_down,
-                         self.thrust_cmds_damp, self.thrust_rot_damp, thrust_noise, self.thrust_max, self.motor_linearity,
-                         self.prop_crossproducts, self.prop_ccw, self.torque_max, self.rot, np.float64(self.omega),
-                         self.eye, self.since_last_svd, self.since_last_svd_limit, self.inertia,
-                         self.damp_omega_quadratic, self.omega_max, self.pos, self.vel)
+            self.torque, self.rot, self.since_last_svd, self.omega_dot, self.omega, self.pos, thrust, rotor_drag_force = \
+            calculate_torque_integrate_rotations_and_update_omega(thrust_cmds, dt, EPS, self.motor_damp_time_up,
+                                                                  self.motor_damp_time_down,
+                                                                  self.thrust_cmds_damp, self.thrust_rot_damp,
+                                                                  thrust_noise, self.thrust_max, self.motor_linearity,
+                                                                  self.prop_crossproducts, self.prop_ccw,
+                                                                  self.torque_max, self.rot, np.float64(self.omega),
+                                                                  self.eye, self.since_last_svd,
+                                                                  self.since_last_svd_limit, self.inertia,
+                                                                  self.damp_omega_quadratic, self.omega_max, self.pos,
+                                                                  self.vel)
 
         # Clipping if met the obstacle and nullify velocities (not sure what to do about accelerations)
         self.pos = np.clip(self.pos, a_min=self.room_box[0], a_max=self.room_box[1])
@@ -461,9 +466,11 @@ class QuadrotorDynamics:
         grav_cnst_arr = np.float64([0, 0, -GRAV])
         sum_thr_drag = thrust + rotor_drag_force
         grav_arr = np.float64([0, 0, self.gravity])
-        self.vel, self.acc, self.accelerometer = compute_velocity_and_acceleration(self.vel, grav_cnst_arr, self.mass, self.rot,
-                                                                         sum_thr_drag, self.vel_damp, dt, self.rot.T,
-                                                                         grav_arr)
+        self.vel, self.acc, self.accelerometer = compute_velocity_and_acceleration(self.vel, grav_cnst_arr, self.mass,
+                                                                                   self.rot,
+                                                                                   sum_thr_drag, self.vel_damp, dt,
+                                                                                   self.rot.T,
+                                                                                   grav_arr)
 
     def reset(self):
         self.thrust_cmds_damp = np.zeros([4])
@@ -598,7 +605,7 @@ def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, re
     cost_pos = rew_coeff["pos"] * cost_pos_raw  # default pos coef: 1.0
 
     ## construct a preceed bonus
-    cost_precede_raw = 10.0 * (dist - dist_prev)
+    cost_precede_raw = (dist - dist_prev)
     cost_precede = rew_coeff['precede'] * cost_precede_raw
 
     # sphere of equal reward if drones are close to the goal position
@@ -662,8 +669,7 @@ def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, re
         cost_act_change,
         cost_vel
     ])
-    # print(-cost_precede, -cost_pos)
-    # print(-cost_pos, -cost_orient, -cost_effort, -cost_spin)
+
     rew_info = {
         "rew_main": -cost_pos,
         'rew_pos': -cost_pos,
@@ -679,6 +685,7 @@ def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, re
 
         "rewraw_main": -cost_pos_raw,
         'rewraw_pos': -cost_pos_raw,
+        'rewraw_precede': -cost_precede_raw,
         'rewraw_action': -cost_effort_raw,
         'rewraw_crash': -cost_crash_raw,
         "rewraw_orient": -cost_orient_raw,
@@ -692,7 +699,7 @@ def compute_reward_weighted(dynamics, goal, action, dt, crashed, time_remain, re
 
     # report rewards in the same format as they are added to the actual agent's reward (easier to debug this way)
     for k, v in rew_info.items():
-        rew_info[k] = dt * v
+        rew_info[k] = v
 
     if np.isnan(reward) or not np.isfinite(reward):
         for key, value in locals().items():
@@ -718,11 +725,14 @@ class QuadrotorSingle:
                  dynamics_randomize_every=None, dyn_sampler_1=None, dyn_sampler_2=None,
                  raw_control=True, raw_control_zero_middle=True, dim_mode='3D', tf_control=False, sim_freq=200.,
                  sim_steps=2,
-                 obs_repr="xyz_vxyz_R_omega", ep_time=7, obstacles_num=0, room_length=10, room_width=10, room_height=10, init_random_state=False,
+                 obs_repr="xyz_vxyz_R_omega", ep_time=7, obstacles_num=0, room_length=10, room_width=10, room_height=10,
+                 init_random_state=False,
                  rew_coeff=None, sense_noise=None, verbose=False, gravity=GRAV,
-                 t2w_std=0.005, t2t_std=0.0005, excite=False, dynamics_simplification=False, use_numba=False, swarm_obs='none', num_agents=1,quads_settle=False,
+                 t2w_std=0.005, t2t_std=0.0005, excite=False, dynamics_simplification=False, use_numba=False,
+                 quads_settle=False,
                  quads_settle_range_meters=1.0, quads_vel_reward_out_range=0.8,
-                 view_mode='local', obstacle_mode='no_obstacles', obstacle_num=0, num_use_neighbor_obs=0, controller_type=None):
+                 view_mode='local', obstacle_mode='no_obstacles', obstacle_num=0,
+                 controller_type=None, swarm_obs='none', num_agents=1, num_use_neighbor_obs=0,):
         np.seterr(under='ignore')
         """
         Args:
@@ -767,7 +777,7 @@ class QuadrotorSingle:
         self.verbose = verbose
         self.obstacles_num = obstacles_num
         self.raw_control = raw_control
-        self.controller_type=controller_type
+        self.controller_type = controller_type
         self.use_numba = use_numba
         self.update_sense_noise(sense_noise=sense_noise)
         self.gravity = gravity
@@ -796,8 +806,9 @@ class QuadrotorSingle:
         # self.yaw_max = np.pi   #rad
 
         self.room_box = np.array(
-            [[-self.room_length/2, -self.room_width/2, 0], [self.room_length/2, self.room_width/2, self.room_height]]) # diagonal coordinates of box (?)
-        self.state_vector = self.state_vector = getattr(get_state, "state_" + self.obs_repr)
+            [[-self.room_length / 2, -self.room_width / 2, 0],
+             [self.room_length / 2, self.room_width / 2, self.room_height]])  # diagonal coordinates of box (?)
+        self.state_vector = getattr(get_state, "state_" + self.obs_repr)
 
         ## WARN: If you
         # size of the box from which initial position will be randomly sampled
@@ -906,7 +917,8 @@ class QuadrotorSingle:
     def update_env(self, room_length, room_width, room_height):
         self.room_length, self.room_width, self.room_height = room_length, room_width, room_height
         self.room_box = np.array(
-            [[-self.room_length/2, -self.room_width/2, 0], [self.room_length/2, self.room_width/2, self.room_height]])  # diagonal coordinates of box (?)
+            [[-self.room_length / 2, -self.room_width / 2, 0],
+             [self.room_length / 2, self.room_width / 2, self.room_height]])  # diagonal coordinates of box (?)
         self.dynamics.room_box = self.room_box
 
     def update_sense_noise(self, sense_noise):
@@ -942,7 +954,7 @@ class QuadrotorSingle:
         ################################################################################
         ## SCENE
         if self.obstacles_num > 0:
-            #TODO: Fix unresolved reference error here???
+            # TODO: Fix unresolved reference error here???
             self.obstacles = _random_obstacles(None, obstacles_num, self.room_size, self.dynamics.arm)
         else:
             self.obstacles = None
@@ -993,12 +1005,15 @@ class QuadrotorSingle:
             "act": [np.zeros(4), np.ones(4)],
             "quat": [-np.ones(4), np.ones(4)],
             "euler": [-np.pi * np.ones(3), np.pi * np.ones(3)],
-            "rxyz": [-room_range, room_range], # rxyz stands for relative pos between quadrotors
-            "rvxyz": [-2.0 * self.dynamics.vxyz_max * np.ones(3), 2.0 * self.dynamics.vxyz_max * np.ones(3)], # rvxyz stands for relative velocity between quadrotors
-            "roxyz": [-room_range, room_range], # roxyz stands for relative pos between quadrotor and obstacle
-            "rovxyz": [-20.0 * np.ones(3), 20.0 * np.ones(3)], # rovxyz stands for relative velocity between quadrotor and obstacle
+            "rxyz": [-room_range, room_range],  # rxyz stands for relative pos between quadrotors
+            "rvxyz": [-2.0 * self.dynamics.vxyz_max * np.ones(3), 2.0 * self.dynamics.vxyz_max * np.ones(3)],
+            # rvxyz stands for relative velocity between quadrotors
+            "roxyz": [-room_range, room_range],  # roxyz stands for relative pos between quadrotor and obstacle
+            "rovxyz": [-20.0 * np.ones(3), 20.0 * np.ones(3)],
+            # rovxyz stands for relative velocity between quadrotor and obstacle
             "osize": [np.zeros(3), 20.0 * np.ones(3)],  # obstacle size, [[0., 0., 0.], [20., 20., 20.]]
-            "otype": [np.zeros(1), 20.0 * np.ones(1)],  # obstacle type, [[0.], [20.]], which means we can support 21 types of obstacles
+            "otype": [np.zeros(1), 20.0 * np.ones(1)],
+            # obstacle type, [[0.], [20.]], which means we can support 21 types of obstacles
             "goal": [-room_range, room_range],
             "nbr_dist": [np.zeros(1), room_max_dist],
             "nbr_goal_dist": [np.zeros(1), room_max_dist],
@@ -1013,7 +1028,8 @@ class QuadrotorSingle:
         elif self.swarm_obs == 'pos_vel_goals' and self.num_agents > 1:
             obs_comps = obs_comps + (['rxyz'] + ['rvxyz'] + ['goal']) * self.num_use_neighbor_obs
         elif self.swarm_obs == 'pos_vel_goals_ndist_gdist' and self.num_agents > 1:
-            obs_comps = obs_comps + (['rxyz'] + ['rvxyz'] + ['goal'] + ['nbr_dist'] + ['nbr_goal_dist']) * self.num_use_neighbor_obs
+            obs_comps = obs_comps + (
+                        ['rxyz'] + ['rvxyz'] + ['goal'] + ['nbr_dist'] + ['nbr_goal_dist']) * self.num_use_neighbor_obs
         if self.obstacle_mode != 'no_obstacles' and self.obstacle_num > 0:
             obs_comps = obs_comps + (['roxyz'] + ['rovxyz'] + ['osize'] + ['otype']) * self.obstacle_num
 
@@ -1065,13 +1081,15 @@ class QuadrotorSingle:
                                                                   a_min=self.room_box[0],
                                                                   a_max=self.room_box[1]))
         self.time_remain = self.ep_len - self.tick
-        reward, rew_info = compute_reward_weighted(self.dynamics, self.goal, self.controller.action, self.dt, self.crashed,
+        reward, rew_info = compute_reward_weighted(self.dynamics, self.goal, self.controller.action, self.dt,
+                                                   self.crashed,
                                                    self.time_remain,
-                                                   rew_coeff=self.rew_coeff, action_prev=self.actions[1], dist_prev=self.dist_prev,
+                                                   rew_coeff=self.rew_coeff, action_prev=self.actions[1],
+                                                   dist_prev=self.dist_prev,
                                                    quads_settle=self.quads_settle,
                                                    quads_settle_range_meters=self.quads_settle_range_meters,
                                                    quads_vel_reward_out_range=self.quads_vel_reward_out_range
-        )
+                                                   )
         self.tick += 1
         done = self.tick >= self.ep_len or self.crashed
         sv = self.state_vector(self)
@@ -1146,7 +1164,6 @@ class QuadrotorSingle:
         ## Updating params
         self.update_dynamics(dynamics_params=self.dynamics_params)
 
-
     def _reset(self):
         ## I have to update state vector 
         ##############################################################
@@ -1159,17 +1176,17 @@ class QuadrotorSingle:
         # from 0.5 to 10 after 100k episodes (a form of curriculum)
         if self.box < 10:
             self.box = self.box * self.box_scale
-        x, y, z = self.np_random.uniform(-self.box, self.box, size=(3,)) + self.goal
-
+        x, y, z = self.np_random.uniform(-self.box/2.0, self.box/2.0, size=(3,)) + self.goal
 
         if self.dim_mode == '1D':
             x, y = self.goal[0], self.goal[1]
         elif self.dim_mode == '2D':
             y = self.goal[1]
         # Since being near the groud means crash we have to start above
-        if z < 0.25: z = 0.25
-        pos = npa(x, y, z)
+        if z < 0.25:
+            z = 0.25
 
+        pos = npa(x, y, z)
         ##############################################################
         ## INIT STATE
         ## Initializing rotation and velocities
@@ -1187,7 +1204,8 @@ class QuadrotorSingle:
             else:
                 # It already sets the state internally
                 _, vel, rotation, omega = self.dynamics.random_state(
-                    box=(self.room_length, self.room_width, self.room_height), vel_max=self.max_init_vel, omega_max=self.max_init_omega
+                    box=(self.room_length, self.room_width, self.room_height), vel_max=self.max_init_vel,
+                    omega_max=self.max_init_omega
                 )
         else:
             ## INIT HORIZONTALLY WITH 0 VEL and OMEGA
@@ -1717,7 +1735,7 @@ def calculate_torque_integrate_rotations_and_update_omega(thrust_cmds, dt, eps, 
     pos = pos + dt * vel
 
     return motor_tau_up, motor_tau_down, thrust_rot_damp, thrust_cmds_damp, torques, \
-           torque, rot, since_last_svd, omega_dot, omega, pos, thrust, rotor_drag_force
+        torque, rot, since_last_svd, omega_dot, omega, pos, thrust, rotor_drag_force
 
 
 @njit
